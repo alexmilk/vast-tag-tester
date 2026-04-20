@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VAST Tag Performance Tester</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
+  .input-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; background: transparent; border: 1px solid #30363d; color: #8b949e; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .tab:first-child { border-radius: 6px 0 0 6px; }
+  .tab:last-child { border-radius: 0 6px 6px 0; }
+  .tab.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .tab:hover:not(.active) { color: #e1e4e8; background: #21262d; }
+  .input-group { display: none; }
+  .input-group.active { display: block; }
+  input[type="text"] { width: 100%; padding: 10px 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e1e4e8; font-size: 14px; outline: none; }
+  input[type="text"]:focus { border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31,111,235,0.15); }
+  textarea { width: 100%; height: 200px; padding: 10px 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e1e4e8; font-size: 13px; font-family: 'SF Mono', Monaco, monospace; outline: none; resize: vertical; }
+  textarea:focus { border-color: #1f6feb; box-shadow: 0 0 0 3px rgba(31,111,235,0.15); }
+  .options-row { display: flex; gap: 16px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+  .option-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #8b949e; cursor: pointer; }
+  .option-label input[type="checkbox"] { accent-color: #1f6feb; }
+  .btn { padding: 10px 24px; border-radius: 6px; border: none; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+  .btn-primary { background: #1f6feb; color: #fff; }
+  .btn-primary:hover { background: #388bfd; }
+  .btn-primary:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+  .btn-secondary { background: #21262d; color: #e1e4e8; border: 1px solid #30363d; }
+  .btn-secondary:hover { background: #30363d; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+
+  /* Results */
+  .results { display: none; }
+  .results.visible { display: block; }
+  .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .summary-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .summary-card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .summary-card .value { font-size: 28px; font-weight: 600; }
+  .summary-card .unit { font-size: 14px; color: #8b949e; font-weight: 400; }
+
+  .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+  .section-header { padding: 14px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .section-header:hover { background: #1c2128; }
+  .section-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .section-badge { background: #21262d; color: #8b949e; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 400; }
+  .section-body { padding: 0; }
+  .section-body.collapsed { display: none; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 16px; color: #8b949e; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #30363d; background: #0d1117; }
+  td { padding: 10px 16px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1c2128; }
+
+  .url-cell { max-width: 400px; word-break: break-all; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #79c0ff; }
+  .timing-bar-container { width: 100%; min-width: 120px; }
+  .timing-bar { height: 20px; border-radius: 3px; position: relative; display: flex; align-items: center; }
+  .timing-bar-fill { height: 100%; border-radius: 3px; min-width: 2px; }
+  .timing-bar-label { position: absolute; right: -4px; transform: translateX(100%); font-size: 12px; font-weight: 500; white-space: nowrap; padding-left: 8px; }
+
+  .status-ok { color: #3fb950; }
+  .status-slow { color: #d29922; }
+  .status-fail { color: #f85149; }
+  .status-skip { color: #8b949e; }
+
+  .perf-good { background: #1a7f37; }
+  .perf-ok { background: #9e6a03; }
+  .perf-bad { background: #da3633; }
+
+  .chain-step { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #21262d; }
+  .chain-step:last-child { border-bottom: none; }
+  .chain-arrow { color: #484f58; font-size: 18px; }
+  .chain-info { flex: 1; }
+  .chain-url { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #79c0ff; word-break: break-all; }
+  .chain-timing { font-size: 13px; font-weight: 500; }
+  .chain-type { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+
+  .waterfall { padding: 20px; }
+  .waterfall-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; font-size: 12px; }
+  .waterfall-label { width: 140px; text-align: right; color: #8b949e; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .waterfall-track { flex: 1; height: 22px; position: relative; background: #0d1117; border-radius: 3px; }
+  .waterfall-bar { position: absolute; height: 100%; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; color: #fff; min-width: 30px; }
+  .waterfall-time { width: 70px; text-align: right; font-family: 'SF Mono', Monaco, monospace; flex-shrink: 0; }
+
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #30363d; border-top-color: #1f6feb; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .progress-text { font-size: 14px; color: #8b949e; padding: 20px 0; }
+
+  .error-box { background: #1c0d0d; border: 1px solid #f8514933; border-radius: 8px; padding: 16px; margin-bottom: 16px; color: #f85149; font-size: 13px; }
+
+  .vast-tree { padding: 16px 20px; font-size: 13px; }
+  .vast-tree-node { margin-left: 20px; margin-bottom: 4px; }
+  .vast-tree-key { color: #d2a8ff; }
+  .vast-tree-val { color: #a5d6ff; }
+
+  .proxy-note { background: #1c1d21; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; margin-top: 12px; font-size: 12px; color: #8b949e; line-height: 1.5; }
+  .proxy-note code { background: #21262d; padding: 2px 6px; border-radius: 3px; font-size: 12px; color: #e1e4e8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>VAST Tag Performance Tester</h1>
+  <p class="subtitle">Analyze load performance of VAST video ad tags &mdash; measures fetch times, media downloads, tracking pixels, and wrapper chains.</p>
+
+  <div class="input-section">
+    <div class="tabs">
+      <button class="tab active" data-target="url-input">Tag URL</button>
+      <button class="tab" data-target="xml-input">Paste XML</button>
+    </div>
+    <div id="url-input" class="input-group active">
+      <input type="text" id="vast-url" placeholder="https://ad.doubleclick.net/ddm/pfadx/..." />
+    </div>
+    <div id="xml-input" class="input-group">
+      <textarea id="vast-xml" placeholder="Paste your VAST XML here..."></textarea>
+    </div>
+    <div class="options-row">
+      <label class="option-label"><input type="checkbox" id="opt-follow-wrappers" checked> Follow wrapper chains</label>
+      <label class="option-label"><input type="checkbox" id="opt-test-media" checked> Test media file downloads</label>
+      <label class="option-label"><input type="checkbox" id="opt-test-tracking" checked> Test tracking pixels</label>
+      <label class="option-label"><input type="checkbox" id="opt-test-companions"> Test companion ads</label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="btn-test" onclick="runTest()">Run Performance Test</button>
+      <button class="btn btn-secondary" id="btn-clear" onclick="clearResults()">Clear</button>
+    </div>
+    <div class="proxy-note">
+      <strong>CORS note:</strong> Many ad servers block cross-origin requests. If you hit CORS errors, you can run a local proxy:
+      <code>npx local-cors-proxy --proxyUrl https://ad-server.com --port 8010</code> or use a browser extension to disable CORS for testing.
+      Alternatively, paste the VAST XML directly.
+    </div>
+  </div>
+
+  <div id="progress" class="progress-text" style="display:none;">
+    <span class="spinner"></span> <span id="progress-text">Fetching VAST tag...</span>
+  </div>
+
+  <div id="error-container"></div>
+
+  <div id="results" class="results">
+    <div id="summary-cards" class="summary-cards"></div>
+    <div id="waterfall-section"></div>
+    <div id="wrapper-chain-section"></div>
+    <div id="media-section"></div>
+    <div id="tracking-section"></div>
+    <div id="companion-section"></div>
+    <div id="vast-overview-section"></div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let testResults = {};
+let maxTime = 0;
+
+// --- Tab switching ---
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.input-group').forEach(g => g.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.target).classList.add('active');
+  });
+});
+
+// --- Helpers ---
+function setProgress(text) {
+  document.getElementById('progress').style.display = 'block';
+  document.getElementById('progress-text').textContent = text;
+}
+
+function hideProgress() {
+  document.getElementById('progress').style.display = 'none';
+}
+
+function showError(msg) {
+  const c = document.getElementById('error-container');
+  c.innerHTML += `<div class="error-box">${escapeHtml(msg)}</div>`;
+}
+
+function clearErrors() {
+  document.getElementById('error-container').innerHTML = '';
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatMs(ms) {
+  if (ms === null || ms === undefined || isNaN(ms)) return '—';
+  if (ms < 1) return '<1 ms';
+  if (ms < 1000) return Math.round(ms) + ' ms';
+  return (ms / 1000).toFixed(2) + ' s';
+}
+
+function perfClass(ms) {
+  if (ms < 500) return 'perf-good';
+  if (ms < 2000) return 'perf-ok';
+  return 'perf-bad';
+}
+
+function statusClass(ms) {
+  if (ms === null || ms === undefined) return 'status-fail';
+  if (ms < 500) return 'status-ok';
+  if (ms < 2000) return 'status-slow';
+  return 'status-fail';
+}
+
+function truncateUrl(url, max = 80) {
+  if (!url) return '';
+  if (url.length <= max) return url;
+  return url.substring(0, max - 3) + '...';
+}
+
+// --- Fetch with timing ---
+async function timedFetch(url, options = {}) {
+  const start = performance.now();
+  let ttfb = null;
+  try {
+    const resp = await fetch(url, { ...options, mode: 'cors' });
+    ttfb = performance.now() - start;
+    const body = await resp.text();
+    const total = performance.now() - start;
+    return { ok: resp.ok, status: resp.status, body, ttfb, total, size: body.length, error: null };
+  } catch (e) {
+    const total = performance.now() - start;
+    return { ok: false, status: 0, body: null, ttfb, total, size: 0, error: e.message };
+  }
+}
+
+// Measure download of a media URL using fetch with abort
+async function timedMediaProbe(url, downloadBytes = 256 * 1024) {
+  const start = performance.now();
+  try {
+    const resp = await fetch(url, { mode: 'cors' });
+    const ttfb = performance.now() - start;
+    const contentLength = resp.headers.get('content-length');
+    const contentType = resp.headers.get('content-type');
+    const reader = resp.body?.getReader();
+    let received = 0;
+    if (reader) {
+      while (received < downloadBytes) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.length;
+      }
+      reader.cancel();
+    }
+    const total = performance.now() - start;
+    return { ok: true, ttfb, total, size: contentLength ? parseInt(contentLength) : received, received, contentType, error: null };
+  } catch (e) {
+    const total = performance.now() - start;
+    return { ok: false, ttfb: null, total, size: 0, received: 0, contentType: null, error: e.message };
+  }
+}
+
+// Fire-and-forget pixel test
+async function timedPixel(url) {
+  const start = performance.now();
+  try {
+    const resp = await fetch(url, { mode: 'no-cors' });
+    const total = performance.now() - start;
+    return { ok: true, total, error: null };
+  } catch (e) {
+    // no-cors may still succeed (opaque response)
+    const total = performance.now() - start;
+    return { ok: true, total, error: null };
+  }
+}
+
+// --- VAST Parser ---
+function parseVAST(xmlString) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlString, 'application/xml');
+  if (doc.querySelector('parsererror')) {
+    throw new Error('Invalid XML: ' + doc.querySelector('parsererror').textContent.substring(0, 200));
+  }
+  return doc;
+}
+
+function extractAds(doc) {
+  const ads = [];
+  doc.querySelectorAll('Ad').forEach(adEl => {
+    const ad = { id: adEl.getAttribute('id'), type: null, wrapperUrl: null, mediaFiles: [], companions: [], trackingEvents: [], impressions: [], errors: [], creativeInfo: {} };
+
+    const wrapper = adEl.querySelector('Wrapper');
+    const inline = adEl.querySelector('InLine');
+
+    if (wrapper) {
+      ad.type = 'Wrapper';
+      const tagUri = wrapper.querySelector('VASTAdTagURI');
+      ad.wrapperUrl = tagUri ? tagUri.textContent.trim() : null;
+    } else if (inline) {
+      ad.type = 'InLine';
+    }
+
+    const source = wrapper || inline;
+    if (!source) return;
+
+    // Ad system
+    const adSystem = source.querySelector('AdSystem');
+    if (adSystem) ad.creativeInfo.adSystem = adSystem.textContent.trim();
+
+    // Ad title
+    const adTitle = source.querySelector('AdTitle');
+    if (adTitle) ad.creativeInfo.adTitle = adTitle.textContent.trim();
+
+    // Impressions
+    source.querySelectorAll(':scope > Impression').forEach(imp => {
+      const url = imp.textContent.trim();
+      if (url) ad.impressions.push(url);
+    });
+
+    // Error URLs
+    source.querySelectorAll(':scope > Error').forEach(err => {
+      const url = err.textContent.trim();
+      if (url) ad.errors.push(url);
+    });
+
+    // Creatives
+    source.querySelectorAll('Creative').forEach(creative => {
+      // Linear
+      const linear = creative.querySelector('Linear');
+      if (linear) {
+        const dur = linear.querySelector('Duration');
+        if (dur) ad.creativeInfo.duration = dur.textContent.trim();
+
+        linear.querySelectorAll('MediaFile').forEach(mf => {
+          ad.mediaFiles.push({
+            url: mf.textContent.trim(),
+            type: mf.getAttribute('type') || '',
+            bitrate: mf.getAttribute('bitrate') || '',
+            width: mf.getAttribute('width') || '',
+            height: mf.getAttribute('height') || '',
+            delivery: mf.getAttribute('delivery') || '',
+            codec: mf.getAttribute('codec') || '',
+            apiFramework: mf.getAttribute('apiFramework') || ''
+          });
+        });
+
+        linear.querySelectorAll('TrackingEvents Tracking').forEach(t => {
+          ad.trackingEvents.push({ event: t.getAttribute('event'), url: t.textContent.trim() });
+        });
+
+        const clickThrough = linear.querySelector('VideoClicks ClickThrough');
+        if (clickThrough) ad.creativeInfo.clickThrough = clickThrough.textContent.trim();
+
+        linear.querySelectorAll('VideoClicks ClickTracking').forEach(ct => {
+          ad.trackingEvents.push({ event: 'clickTracking', url: ct.textContent.trim() });
+        });
+      }
+
+      // Companions
+      creative.querySelectorAll('CompanionAds Companion').forEach(comp => {
+        const staticRes = comp.querySelector('StaticResource');
+        const iframeRes = comp.querySelector('IFrameResource');
+        const htmlRes = comp.querySelector('HTMLResource');
+        ad.companions.push({
+          width: comp.getAttribute('width'),
+          height: comp.getAttribute('height'),
+          type: staticRes ? 'static' : iframeRes ? 'iframe' : htmlRes ? 'html' : 'unknown',
+          url: staticRes ? staticRes.textContent.trim() : iframeRes ? iframeRes.textContent.trim() : null,
+          creativeType: staticRes ? staticRes.getAttribute('creativeType') : null
+        });
+      });
+    });
+
+    ads.push(ad);
+  });
+  return ads;
+}
+
+// --- Main Test Runner ---
+async function runTest() {
+  clearErrors();
+  clearResults();
+  testResults = { wrapperChain: [], mediaResults: [], trackingResults: [], companionResults: [], vastDocs: [] };
+  maxTime = 0;
+
+  const btn = document.getElementById('btn-test');
+  btn.disabled = true;
+
+  const useUrl = document.querySelector('.tab.active').dataset.target === 'url-input';
+  const followWrappers = document.getElementById('opt-follow-wrappers').checked;
+  const testMedia = document.getElementById('opt-test-media').checked;
+  const testTracking = document.getElementById('opt-test-tracking').checked;
+  const testCompanions = document.getElementById('opt-test-companions').checked;
+
+  let xmlString = null;
+  let allAds = [];
+  let totalFetchTime = 0;
+  let wrapperDepth = 0;
+
+  try {
+    // Step 1: Get initial VAST
+    if (useUrl) {
+      const url = document.getElementById('vast-url').value.trim();
+      if (!url) { showError('Please enter a VAST tag URL.'); btn.disabled = false; return; }
+
+      setProgress('Fetching VAST tag...');
+      const result = await timedFetch(url);
+      if (!result.ok && !result.body) {
+        showError(`Failed to fetch VAST tag: ${result.error || 'HTTP ' + result.status}. This is likely a CORS issue — try pasting the XML directly.`);
+        btn.disabled = false; hideProgress(); return;
+      }
+      xmlString = result.body;
+      totalFetchTime = result.total;
+      testResults.wrapperChain.push({ url, type: 'Initial Tag', ttfb: result.ttfb, total: result.total, status: result.status, size: result.size, error: result.error });
+    } else {
+      xmlString = document.getElementById('vast-xml').value.trim();
+      if (!xmlString) { showError('Please paste VAST XML.'); btn.disabled = false; return; }
+      testResults.wrapperChain.push({ url: '(pasted XML)', type: 'Pasted XML', ttfb: 0, total: 0, status: 200, size: xmlString.length, error: null });
+    }
+
+    // Step 2: Parse and resolve wrapper chain
+    let currentXml = xmlString;
+    const maxWrapperDepth = 10;
+
+    while (true) {
+      setProgress(`Parsing VAST XML (depth ${wrapperDepth})...`);
+      const doc = parseVAST(currentXml);
+      testResults.vastDocs.push(currentXml);
+      const ads = extractAds(doc);
+      allAds = allAds.concat(ads);
+
+      // Check for wrapper
+      const wrapper = ads.find(a => a.type === 'Wrapper' && a.wrapperUrl);
+      if (!wrapper || !followWrappers || wrapperDepth >= maxWrapperDepth) break;
+
+      wrapperDepth++;
+      setProgress(`Following wrapper redirect ${wrapperDepth}: ${truncateUrl(wrapper.wrapperUrl, 60)}`);
+      const wrapResult = await timedFetch(wrapper.wrapperUrl);
+      totalFetchTime += wrapResult.total;
+      testResults.wrapperChain.push({
+        url: wrapper.wrapperUrl, type: `Wrapper ${wrapperDepth}`,
+        ttfb: wrapResult.ttfb, total: wrapResult.total, status: wrapResult.status,
+        size: wrapResult.size, error: wrapResult.error
+      });
+
+      if (!wrapResult.ok && !wrapResult.body) {
+        showError(`Wrapper redirect ${wrapperDepth} failed: ${wrapResult.error || 'HTTP ' + wrapResult.status}`);
+        break;
+      }
+      currentXml = wrapResult.body;
+    }
+
+    // Collect all resources
+    const allMedia = allAds.flatMap(a => a.mediaFiles);
+    const allTracking = allAds.flatMap(a => [...a.trackingEvents.map(t => ({...t})), ...a.impressions.map(u => ({ event: 'impression', url: u }))]);
+    const allCompanions = allAds.flatMap(a => a.companions).filter(c => c.url);
+
+    // Step 3: Test media files
+    if (testMedia && allMedia.length > 0) {
+      setProgress(`Testing ${allMedia.length} media file(s)...`);
+      const mediaPromises = allMedia.map(async (mf) => {
+        const result = await timedMediaProbe(mf.url);
+        return { ...mf, ...result };
+      });
+      testResults.mediaResults = await Promise.all(mediaPromises);
+    }
+
+    // Step 4: Test tracking pixels
+    if (testTracking && allTracking.length > 0) {
+      setProgress(`Testing ${allTracking.length} tracking pixel(s)...`);
+      const trackPromises = allTracking.map(async (t) => {
+        const result = await timedPixel(t.url);
+        return { ...t, ...result };
+      });
+      testResults.trackingResults = await Promise.all(trackPromises);
+    }
+
+    // Step 5: Test companion ads
+    if (testCompanions && allCompanions.length > 0) {
+      setProgress(`Testing ${allCompanions.length} companion ad(s)...`);
+      const compPromises = allCompanions.map(async (c) => {
+        const result = await timedFetch(c.url);
+        return { ...c, ...result };
+      });
+      testResults.companionResults = await Promise.all(compPromises);
+    }
+
+    // Calculate max time for waterfall
+    maxTime = Math.max(
+      ...testResults.wrapperChain.map(w => w.total || 0),
+      ...testResults.mediaResults.map(m => m.total || 0),
+      ...testResults.trackingResults.map(t => t.total || 0),
+      ...testResults.companionResults.map(c => c.total || 0),
+      100
+    );
+
+    // Render
+    hideProgress();
+    renderResults(allAds, totalFetchTime, wrapperDepth);
+
+  } catch (e) {
+    hideProgress();
+    showError(e.message);
+  }
+
+  btn.disabled = false;
+}
+
+// --- Rendering ---
+function renderResults(allAds, totalFetchTime, wrapperDepth) {
+  const container = document.getElementById('results');
+  container.classList.add('visible');
+
+  // Summary
+  const inlineAd = allAds.find(a => a.type === 'InLine');
+  const totalMedia = testResults.mediaResults.length;
+  const failedMedia = testResults.mediaResults.filter(m => !m.ok).length;
+  const avgMediaTtfb = totalMedia > 0 ? testResults.mediaResults.filter(m => m.ttfb).reduce((s, m) => s + m.ttfb, 0) / testResults.mediaResults.filter(m => m.ttfb).length : 0;
+  const totalTracking = testResults.trackingResults.length;
+  const slowestMedia = totalMedia > 0 ? Math.max(...testResults.mediaResults.map(m => m.total || 0)) : 0;
+
+  document.getElementById('summary-cards').innerHTML = `
+    <div class="summary-card">
+      <div class="label">VAST Fetch</div>
+      <div class="value ${statusClass(totalFetchTime)}">${formatMs(totalFetchTime)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Wrapper Depth</div>
+      <div class="value">${wrapperDepth} <span class="unit">redirect${wrapperDepth !== 1 ? 's' : ''}</span></div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Media Files</div>
+      <div class="value">${totalMedia} <span class="unit">${failedMedia > 0 ? `(${failedMedia} failed)` : ''}</span></div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Avg Media TTFB</div>
+      <div class="value ${statusClass(avgMediaTtfb)}">${formatMs(avgMediaTtfb)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Slowest Resource</div>
+      <div class="value ${statusClass(Math.max(slowestMedia, totalFetchTime))}">${formatMs(Math.max(slowestMedia, totalFetchTime))}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Duration</div>
+      <div class="value">${inlineAd?.creativeInfo?.duration || '—'}</div>
+    </div>
+  `;
+
+  // Waterfall chart
+  renderWaterfall();
+
+  // Wrapper chain
+  if (testResults.wrapperChain.length > 0) {
+    renderWrapperChain();
+  }
+
+  // Media files
+  if (testResults.mediaResults.length > 0) {
+    renderMediaTable();
+  }
+
+  // Tracking pixels
+  if (testResults.trackingResults.length > 0) {
+    renderTrackingTable();
+  }
+
+  // Companion ads
+  if (testResults.companionResults.length > 0) {
+    renderCompanionTable();
+  }
+
+  // VAST overview
+  renderVastOverview(allAds);
+}
+
+function renderWaterfall() {
+  const all = [
+    ...testResults.wrapperChain.map((w, i) => ({ label: w.type, time: w.total, offset: testResults.wrapperChain.slice(0, i).reduce((s, x) => s + (x.total || 0), 0), cat: 'fetch' })),
+    ...testResults.mediaResults.map(m => ({ label: truncateUrl(new URL(m.url).pathname.split('/').pop() || m.url, 30), time: m.total, offset: testResults.wrapperChain.reduce((s, x) => s + (x.total || 0), 0), cat: 'media' })),
+    ...testResults.trackingResults.slice(0, 20).map(t => ({ label: t.event, time: t.total, offset: 0, cat: 'tracking' })),
+  ];
+
+  if (all.length === 0) return;
+
+  const totalTime = Math.max(...all.map(a => (a.offset || 0) + (a.time || 0)), 100);
+  const colors = { fetch: '#1f6feb', media: '#3fb950', tracking: '#8b949e' };
+
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">Waterfall <span class="section-badge">${all.length} resources</span></span></div><div class="section-body"><div class="waterfall">`;
+
+  all.forEach(item => {
+    const left = ((item.offset || 0) / totalTime) * 100;
+    const width = Math.max(((item.time || 1) / totalTime) * 100, 0.5);
+    html += `<div class="waterfall-row">
+      <div class="waterfall-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</div>
+      <div class="waterfall-track">
+        <div class="waterfall-bar ${perfClass(item.time)}" style="left:${left}%;width:${width}%;background:${colors[item.cat]}">${width > 8 ? formatMs(item.time) : ''}</div>
+      </div>
+      <div class="waterfall-time ${statusClass(item.time)}">${formatMs(item.time)}</div>
+    </div>`;
+  });
+
+  html += `</div></div></div>`;
+  document.getElementById('waterfall-section').innerHTML = html;
+}
+
+function renderWrapperChain() {
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">Wrapper Chain <span class="section-badge">${testResults.wrapperChain.length} step(s)</span></span></div><div class="section-body">`;
+
+  testResults.wrapperChain.forEach((step, i) => {
+    html += `<div class="chain-step">
+      <div style="width:24px;text-align:center">${i > 0 ? '<span class="chain-arrow">↓</span>' : '●'}</div>
+      <div class="chain-info">
+        <div class="chain-type">${escapeHtml(step.type)}</div>
+        <div class="chain-url">${escapeHtml(step.url)}</div>
+        ${step.error ? `<div class="status-fail" style="margin-top:4px;font-size:12px">${escapeHtml(step.error)}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div class="chain-timing ${statusClass(step.total)}">${formatMs(step.total)}</div>
+        <div style="font-size:11px;color:#8b949e">TTFB: ${formatMs(step.ttfb)} · ${formatBytes(step.size)}</div>
+      </div>
+    </div>`;
+  });
+
+  html += `</div></div>`;
+  document.getElementById('wrapper-chain-section').innerHTML = html;
+}
+
+function renderMediaTable() {
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">Media Files <span class="section-badge">${testResults.mediaResults.length}</span></span></div><div class="section-body">
+    <table><thead><tr><th>URL</th><th>Type</th><th>Resolution</th><th>Bitrate</th><th>Size</th><th>TTFB</th><th>Download</th><th>Status</th></tr></thead><tbody>`;
+
+  testResults.mediaResults.forEach(m => {
+    html += `<tr>
+      <td class="url-cell" title="${escapeHtml(m.url)}">${escapeHtml(truncateUrl(m.url, 60))}</td>
+      <td>${escapeHtml(m.type || m.contentType || '—')}</td>
+      <td>${m.width && m.height ? m.width + '×' + m.height : '—'}</td>
+      <td>${m.bitrate ? m.bitrate + ' kbps' : '—'}</td>
+      <td>${formatBytes(m.size)}</td>
+      <td class="${statusClass(m.ttfb)}">${formatMs(m.ttfb)}</td>
+      <td class="${statusClass(m.total)}">${formatMs(m.total)}</td>
+      <td>${m.ok ? '<span class="status-ok">OK</span>' : '<span class="status-fail">' + escapeHtml(m.error || 'Failed') + '</span>'}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  document.getElementById('media-section').innerHTML = html;
+}
+
+function renderTrackingTable() {
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">Tracking Events <span class="section-badge">${testResults.trackingResults.length}</span></span></div><div class="section-body">
+    <table><thead><tr><th>Event</th><th>URL</th><th>Time</th></tr></thead><tbody>`;
+
+  testResults.trackingResults.forEach(t => {
+    html += `<tr>
+      <td>${escapeHtml(t.event || '—')}</td>
+      <td class="url-cell" title="${escapeHtml(t.url)}">${escapeHtml(truncateUrl(t.url, 80))}</td>
+      <td class="${statusClass(t.total)}">${formatMs(t.total)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  document.getElementById('tracking-section').innerHTML = html;
+}
+
+function renderCompanionTable() {
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">Companion Ads <span class="section-badge">${testResults.companionResults.length}</span></span></div><div class="section-body">
+    <table><thead><tr><th>Size</th><th>Type</th><th>URL</th><th>Time</th><th>Status</th></tr></thead><tbody>`;
+
+  testResults.companionResults.forEach(c => {
+    html += `<tr>
+      <td>${c.width}×${c.height}</td>
+      <td>${escapeHtml(c.type)} ${c.creativeType ? '(' + escapeHtml(c.creativeType) + ')' : ''}</td>
+      <td class="url-cell" title="${escapeHtml(c.url)}">${escapeHtml(truncateUrl(c.url, 60))}</td>
+      <td class="${statusClass(c.total)}">${formatMs(c.total)}</td>
+      <td>${c.ok ? '<span class="status-ok">OK</span>' : '<span class="status-fail">' + escapeHtml(c.error || 'Failed') + '</span>'}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div></div>`;
+  document.getElementById('companion-section').innerHTML = html;
+}
+
+function renderVastOverview(allAds) {
+  let html = `<div class="section"><div class="section-header" onclick="toggleSection(this)"><span class="section-title">VAST Structure <span class="section-badge">${allAds.length} ad(s)</span></span></div><div class="section-body collapsed"><div class="vast-tree">`;
+
+  allAds.forEach((ad, i) => {
+    html += `<div style="margin-bottom:12px;">
+      <div><span class="vast-tree-key">Ad ${i + 1}</span> <span style="color:#8b949e">(${ad.type}, ID: ${ad.id || 'none'})</span></div>`;
+    if (ad.creativeInfo.adSystem) html += `<div class="vast-tree-node"><span class="vast-tree-key">AdSystem:</span> <span class="vast-tree-val">${escapeHtml(ad.creativeInfo.adSystem)}</span></div>`;
+    if (ad.creativeInfo.adTitle) html += `<div class="vast-tree-node"><span class="vast-tree-key">AdTitle:</span> <span class="vast-tree-val">${escapeHtml(ad.creativeInfo.adTitle)}</span></div>`;
+    if (ad.creativeInfo.duration) html += `<div class="vast-tree-node"><span class="vast-tree-key">Duration:</span> <span class="vast-tree-val">${escapeHtml(ad.creativeInfo.duration)}</span></div>`;
+    if (ad.creativeInfo.clickThrough) html += `<div class="vast-tree-node"><span class="vast-tree-key">ClickThrough:</span> <span class="vast-tree-val">${escapeHtml(truncateUrl(ad.creativeInfo.clickThrough, 100))}</span></div>`;
+    html += `<div class="vast-tree-node"><span class="vast-tree-key">Media Files:</span> <span class="vast-tree-val">${ad.mediaFiles.length}</span></div>`;
+    html += `<div class="vast-tree-node"><span class="vast-tree-key">Tracking Events:</span> <span class="vast-tree-val">${ad.trackingEvents.length}</span></div>`;
+    html += `<div class="vast-tree-node"><span class="vast-tree-key">Impressions:</span> <span class="vast-tree-val">${ad.impressions.length}</span></div>`;
+    html += `<div class="vast-tree-node"><span class="vast-tree-key">Companions:</span> <span class="vast-tree-val">${ad.companions.length}</span></div>`;
+    if (ad.wrapperUrl) html += `<div class="vast-tree-node"><span class="vast-tree-key">Wrapper URL:</span> <span class="vast-tree-val">${escapeHtml(truncateUrl(ad.wrapperUrl, 100))}</span></div>`;
+    html += `</div>`;
+  });
+
+  html += `</div></div></div>`;
+  document.getElementById('vast-overview-section').innerHTML = html;
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function toggleSection(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('collapsed');
+}
+
+function clearResults() {
+  document.getElementById('results').classList.remove('visible');
+  document.getElementById('summary-cards').innerHTML = '';
+  document.getElementById('waterfall-section').innerHTML = '';
+  document.getElementById('wrapper-chain-section').innerHTML = '';
+  document.getElementById('media-section').innerHTML = '';
+  document.getElementById('tracking-section').innerHTML = '';
+  document.getElementById('companion-section').innerHTML = '';
+  document.getElementById('vast-overview-section').innerHTML = '';
+  clearErrors();
+  hideProgress();
+}
+</script>
+</body>
+</html>
