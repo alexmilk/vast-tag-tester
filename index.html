@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VAST Tag Performance Tester</title>
+<script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
@@ -120,6 +121,28 @@
   .player-event { font-size: 11px; font-family: 'SF Mono', Monaco, monospace; padding: 3px 0; color: #8b949e; border-bottom: 1px solid #21262d; display: flex; gap: 8px; }
   .player-event-time { color: #1f6feb; min-width: 60px; }
   .player-event-name { color: #e1e4e8; }
+
+  /* Player mode tabs */
+  .player-mode-tabs { display: flex; gap: 0; margin-bottom: 16px; }
+  .player-mode-tab { padding: 6px 14px; background: transparent; border: 1px solid #30363d; color: #8b949e; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+  .player-mode-tab:first-child { border-radius: 5px 0 0 5px; }
+  .player-mode-tab:last-child { border-radius: 0 5px 5px 0; }
+  .player-mode-tab.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .player-mode-tab:hover:not(.active) { color: #e1e4e8; background: #21262d; }
+  .player-mode-content { display: none; }
+  .player-mode-content.active { display: block; }
+
+  /* IMA player */
+  .ima-player-wrap { position: relative; width: 100%; max-width: 640px; background: #000; border-radius: 6px; overflow: hidden; }
+  .ima-player-wrap video { width: 100%; display: block; }
+  .ima-ad-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .ima-controls { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .ima-btn { padding: 6px 14px; border-radius: 5px; border: 1px solid #30363d; background: #21262d; color: #e1e4e8; font-size: 12px; cursor: pointer; }
+  .ima-btn:hover { background: #30363d; }
+  .ima-btn-play { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .ima-btn-play:hover { background: #388bfd; }
+  .ima-status { font-size: 12px; color: #8b949e; margin-left: 8px; }
+  .ima-note { font-size: 11px; color: #484f58; margin-top: 8px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -405,7 +428,7 @@ function extractAds(doc) {
 async function runTest() {
   clearErrors();
   clearResults();
-  testResults = { wrapperChain: [], mediaResults: [], trackingResults: [], companionResults: [], vastDocs: [] };
+  testResults = { wrapperChain: [], mediaResults: [], trackingResults: [], companionResults: [], vastDocs: [], tagUrl: null, vastXml: null };
   maxTime = 0;
 
   const btn = document.getElementById('btn-test');
@@ -436,10 +459,13 @@ async function runTest() {
       }
       xmlString = result.body;
       totalFetchTime = result.total;
+      testResults.tagUrl = url;
+      testResults.vastXml = xmlString;
       testResults.wrapperChain.push({ url, type: 'Initial Tag', ttfb: result.ttfb, total: result.total, status: result.status, size: result.size, error: result.error });
     } else {
       xmlString = document.getElementById('vast-xml').value.trim();
       if (!xmlString) { showError('Please paste VAST XML.'); btn.disabled = false; return; }
+      testResults.vastXml = xmlString;
       testResults.wrapperChain.push({ url: '(pasted XML)', type: 'Pasted XML', ttfb: 0, total: 0, status: 200, size: xmlString.length, error: null });
     }
 
@@ -730,15 +756,25 @@ function renderVastOverview(allAds) {
   document.getElementById('vast-overview-section').innerHTML = html;
 }
 
+// --- IMA SDK state ---
+let imaAdDisplayContainer = null;
+let imaAdsLoader = null;
+let imaAdsManager = null;
+let imaStartTime = 0;
+
 function renderPlayer(allAds) {
   const allMedia = allAds.flatMap(a => a.mediaFiles).filter(mf => mf.url && mf.type && mf.type.startsWith('video/'));
-  if (allMedia.length === 0) {
+  const hasMedia = allMedia.length > 0;
+  const hasTagUrl = !!testResults.tagUrl;
+  const hasXml = !!testResults.vastXml;
+
+  if (!hasMedia && !hasTagUrl && !hasXml) {
     document.getElementById('player-section').innerHTML = '';
     return;
   }
 
-  // Build options sorted by bitrate desc
-  const sorted = [...allMedia].sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
+  // Build rendition options for direct player
+  const sorted = hasMedia ? [...allMedia].sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0)) : [];
   const options = sorted.map((mf, i) => {
     const label = `${mf.width}x${mf.height} · ${mf.bitrate ? mf.bitrate + ' kbps' : 'unknown bitrate'} · ${mf.type}`;
     return `<option value="${i}" data-url="${escapeHtml(mf.url)}" data-type="${escapeHtml(mf.type)}" data-width="${mf.width}" data-height="${mf.height}" data-bitrate="${mf.bitrate}" data-delivery="${mf.delivery}">${escapeHtml(label)}</option>`;
@@ -749,29 +785,66 @@ function renderPlayer(allAds) {
   const adSystem = allAds.find(a => a.creativeInfo?.adSystem)?.creativeInfo?.adSystem || '';
   const adTitle = allAds.find(a => a.creativeInfo?.adTitle)?.creativeInfo?.adTitle || '';
 
+  const metaHtml = `
+    ${adSystem ? `<dt>Ad System:</dt> <dd>${escapeHtml(adSystem)}</dd>` : ''}
+    ${adTitle ? `<dt>Ad Title:</dt> <dd>${escapeHtml(adTitle)}</dd>` : ''}
+    ${duration ? `<dt>Duration:</dt> <dd>${escapeHtml(duration)}</dd>` : ''}
+    ${clickThrough ? `<dt>Click URL:</dt> <dd style="font-size:11px;word-break:break-all;color:#79c0ff">${escapeHtml(truncateUrl(clickThrough, 60))}</dd>` : ''}
+  `;
+
   const html = `<div class="section">
     <div class="section-header" onclick="toggleSection(this)">
-      <span class="section-title">Ad Preview <span class="section-badge">${allMedia.length} rendition(s)</span></span>
+      <span class="section-title">Ad Preview <span class="section-badge">${hasMedia ? sorted.length + ' rendition(s)' : 'IMA only'}</span></span>
     </div>
     <div class="section-body">
       <div class="player-container">
-        <div class="player-wrapper">
-          <div class="player-video-area">
-            <video id="vast-player" controls preload="auto" crossorigin="anonymous">
-              <source src="${escapeHtml(sorted[0].url)}" type="${escapeHtml(sorted[0].type)}">
-            </video>
-          </div>
-          <div class="player-sidebar">
-            <div class="player-select-label">Rendition</div>
-            <select class="player-select" id="player-rendition" onchange="switchRendition()">${options}</select>
-            <div class="player-meta">
-              ${adSystem ? `<dt>Ad System:</dt> <dd>${escapeHtml(adSystem)}</dd>` : ''}
-              ${adTitle ? `<dt>Ad Title:</dt> <dd>${escapeHtml(adTitle)}</dd>` : ''}
-              ${duration ? `<dt>Duration:</dt> <dd>${escapeHtml(duration)}</dd>` : ''}
-              ${clickThrough ? `<dt>Click URL:</dt> <dd style="font-size:11px;word-break:break-all;color:#79c0ff">${escapeHtml(truncateUrl(clickThrough, 60))}</dd>` : ''}
+        <div class="player-mode-tabs">
+          ${hasMedia ? '<button class="player-mode-tab active" data-mode="direct" onclick="switchPlayerMode(this)">Direct Player</button>' : ''}
+          <button class="player-mode-tab ${hasMedia ? '' : 'active'}" data-mode="ima" onclick="switchPlayerMode(this)">IMA SDK Player</button>
+        </div>
+
+        <!-- Direct Player Mode -->
+        ${hasMedia ? `<div id="player-direct" class="player-mode-content active">
+          <div class="player-wrapper">
+            <div class="player-video-area">
+              <video id="vast-player" controls preload="auto" crossorigin="anonymous">
+                <source src="${escapeHtml(sorted[0].url)}" type="${escapeHtml(sorted[0].type)}">
+              </video>
             </div>
-            <div class="player-select-label" style="margin-top:14px">Playback Events</div>
-            <div class="player-events" id="player-events"></div>
+            <div class="player-sidebar">
+              <div class="player-select-label">Rendition</div>
+              <select class="player-select" id="player-rendition" onchange="switchRendition()">${options}</select>
+              <div class="player-meta">${metaHtml}</div>
+              <div class="player-select-label" style="margin-top:14px">Playback Events</div>
+              <div class="player-events" id="player-events"></div>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- IMA SDK Player Mode -->
+        <div id="player-ima" class="player-mode-content ${hasMedia ? '' : 'active'}">
+          <div class="player-wrapper">
+            <div class="player-video-area">
+              <div class="ima-player-wrap" id="ima-player-wrap">
+                <video id="ima-content-player" playsinline></video>
+                <div id="ima-ad-container" class="ima-ad-container"></div>
+              </div>
+              <div class="ima-controls">
+                <button class="ima-btn ima-btn-play" id="ima-play-btn" onclick="imaRequestAds()">Load &amp; Play Ad</button>
+                <button class="ima-btn" onclick="imaReset()">Reset</button>
+                <span class="ima-status" id="ima-status">Ready</span>
+              </div>
+              <div class="ima-note">
+                This uses Google's IMA SDK to load and render the ad exactly as a publisher's player would.
+                VPAID/SIMID creatives, verification scripts, and viewability measurement will execute.
+                ${!hasTagUrl ? 'Using VAST XML via adsResponse (no tag URL needed).' : ''}
+              </div>
+            </div>
+            <div class="player-sidebar">
+              <div class="player-meta">${metaHtml}</div>
+              <div class="player-select-label" style="margin-top:14px">IMA SDK Events</div>
+              <div class="player-events" id="ima-events"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -780,15 +853,24 @@ function renderPlayer(allAds) {
 
   document.getElementById('player-section').innerHTML = html;
 
-  // Attach event listeners to the video element
+  // --- Direct player event listeners ---
+  if (hasMedia) {
+    attachDirectPlayerEvents();
+  }
+
+  // --- Initialize IMA ---
+  initIma();
+}
+
+function attachDirectPlayerEvents() {
   const video = document.getElementById('vast-player');
+  if (!video) return;
   const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause', 'seeking', 'seeked', 'waiting', 'stalled', 'error', 'ended', 'timeupdate'];
   const playerStartTime = performance.now();
   let lastTimeUpdate = 0;
 
   events.forEach(evt => {
     video.addEventListener(evt, () => {
-      // Throttle timeupdate to once per second
       if (evt === 'timeupdate') {
         const now = performance.now();
         if (now - lastTimeUpdate < 1000) return;
@@ -806,7 +888,6 @@ function renderPlayer(allAds) {
   });
 }
 
-// Store sorted media for rendition switching
 function switchRendition() {
   const select = document.getElementById('player-rendition');
   const option = select.options[select.selectedIndex];
@@ -821,9 +902,191 @@ function switchRendition() {
   video.load();
   video.currentTime = currentTime;
   if (wasPlaying) video.play();
-  // Clear events log on switch
   const eventsDiv = document.getElementById('player-events');
   if (eventsDiv) eventsDiv.innerHTML = '';
+}
+
+function switchPlayerMode(tab) {
+  const tabs = tab.parentElement.querySelectorAll('.player-mode-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+
+  const container = tab.closest('.player-container');
+  container.querySelectorAll('.player-mode-content').forEach(c => c.classList.remove('active'));
+  const target = container.querySelector('#player-' + tab.dataset.mode);
+  if (target) target.classList.add('active');
+
+  // Pause direct player when switching to IMA
+  if (tab.dataset.mode === 'ima') {
+    const directVideo = document.getElementById('vast-player');
+    if (directVideo) directVideo.pause();
+  }
+  // Destroy IMA when switching to direct
+  if (tab.dataset.mode === 'direct') {
+    if (imaAdsManager) { try { imaAdsManager.destroy(); } catch(e) {} imaAdsManager = null; }
+  }
+}
+
+// --- IMA SDK Integration ---
+function logImaEvent(name, detail) {
+  const eventsDiv = document.getElementById('ima-events');
+  if (!eventsDiv) return;
+  const elapsed = performance.now() - imaStartTime;
+  const entry = document.createElement('div');
+  entry.className = 'player-event';
+  const detailHtml = detail ? `<span style="color:#484f58">${escapeHtml(detail)}</span>` : '';
+  entry.innerHTML = `<span class="player-event-time">${formatMs(elapsed)}</span><span class="player-event-name">${escapeHtml(name)}</span>${detailHtml}`;
+  eventsDiv.appendChild(entry);
+  eventsDiv.scrollTop = eventsDiv.scrollHeight;
+}
+
+function setImaStatus(text) {
+  const el = document.getElementById('ima-status');
+  if (el) el.textContent = text;
+}
+
+function initIma() {
+  if (typeof google === 'undefined' || !google.ima) {
+    logImaEvent('ERROR', 'IMA SDK failed to load — check network/ad blocker');
+    setImaStatus('SDK unavailable');
+    return;
+  }
+
+  const contentPlayer = document.getElementById('ima-content-player');
+  const adContainer = document.getElementById('ima-ad-container');
+  if (!contentPlayer || !adContainer) return;
+
+  imaAdDisplayContainer = new google.ima.AdDisplayContainer(adContainer, contentPlayer);
+  imaAdsLoader = new google.ima.AdsLoader(imaAdDisplayContainer);
+
+  imaAdsLoader.addEventListener(google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED, onImaAdsManagerLoaded, false);
+  imaAdsLoader.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, onImaAdError, false);
+
+  logImaEvent('INIT', 'IMA SDK initialized');
+  setImaStatus('Ready — click Load & Play');
+}
+
+function imaRequestAds() {
+  if (!imaAdsLoader) {
+    logImaEvent('ERROR', 'IMA not initialized');
+    return;
+  }
+
+  // Reset events log
+  const eventsDiv = document.getElementById('ima-events');
+  if (eventsDiv) eventsDiv.innerHTML = '';
+  imaStartTime = performance.now();
+
+  // Must be called on user action
+  imaAdDisplayContainer.initialize();
+
+  const adsRequest = new google.ima.AdsRequest();
+
+  // Use tag URL if available, otherwise feed the XML directly via adsResponse
+  if (testResults.tagUrl) {
+    adsRequest.adTagUrl = testResults.tagUrl;
+    logImaEvent('REQUEST', 'Using tag URL: ' + truncateUrl(testResults.tagUrl, 60));
+  } else if (testResults.vastXml) {
+    adsRequest.adsResponse = testResults.vastXml;
+    logImaEvent('REQUEST', 'Using pasted XML via adsResponse');
+  }
+
+  // Size the ad to the container
+  const wrap = document.getElementById('ima-player-wrap');
+  adsRequest.linearAdSlotWidth = wrap.offsetWidth;
+  adsRequest.linearAdSlotHeight = wrap.offsetHeight || 360;
+
+  logImaEvent('ADS_REQUEST', `slot: ${adsRequest.linearAdSlotWidth}x${adsRequest.linearAdSlotHeight}`);
+  setImaStatus('Requesting ads...');
+
+  imaAdsLoader.requestAds(adsRequest);
+}
+
+function onImaAdsManagerLoaded(adsManagerLoadedEvent) {
+  const elapsed = performance.now() - imaStartTime;
+  logImaEvent('ADS_MANAGER_LOADED', formatMs(elapsed));
+  setImaStatus('Ad loaded, starting...');
+
+  const contentPlayer = document.getElementById('ima-content-player');
+  imaAdsManager = adsManagerLoadedEvent.getAdsManager(contentPlayer);
+
+  // Listen to all ad events
+  const adEvents = [
+    'AD_BREAK_READY', 'AD_BUFFERING', 'AD_CAN_PLAY', 'AD_METADATA',
+    'ALL_ADS_COMPLETED', 'CLICK', 'COMPLETE', 'CONTENT_PAUSE_REQUESTED',
+    'CONTENT_RESUME_REQUESTED', 'DURATION_CHANGE', 'FIRST_QUARTILE',
+    'IMPRESSION', 'INTERACTION', 'LINEAR_CHANGED', 'LOADED', 'LOG',
+    'MIDPOINT', 'PAUSED', 'RESUMED', 'SKIPPABLE_STATE_CHANGED',
+    'SKIPPED', 'STARTED', 'THIRD_QUARTILE', 'USER_CLOSE',
+    'VIDEO_CLICKED', 'VIDEO_ICON_CLICKED', 'VOLUME_CHANGED', 'VOLUME_MUTED'
+  ];
+
+  adEvents.forEach(evtName => {
+    const evtType = google.ima.AdEvent.Type[evtName];
+    if (!evtType) return;
+    imaAdsManager.addEventListener(evtType, (e) => {
+      let detail = '';
+      if (evtName === 'LOADED' || evtName === 'STARTED') {
+        const ad = e.getAd();
+        if (ad) {
+          const w = ad.getVastMediaWidth();
+          const h = ad.getVastMediaHeight();
+          const dur = ad.getDuration();
+          const sys = ad.getAdSystem();
+          const creative = ad.getCreativeId();
+          detail = [
+            w && h ? `${w}x${h}` : null,
+            dur > 0 ? `${dur}s` : null,
+            sys ? `sys:${sys}` : null,
+            creative ? `creative:${creative}` : null
+          ].filter(Boolean).join(' · ');
+        }
+      }
+      if (evtName === 'LOG') {
+        const adData = e.getAdData();
+        if (adData && adData.adError) detail = adData.adError.getMessage?.() || '';
+      }
+      logImaEvent(evtName, detail);
+
+      if (evtName === 'STARTED') setImaStatus('Playing ad');
+      if (evtName === 'COMPLETE') setImaStatus('Ad complete');
+      if (evtName === 'ALL_ADS_COMPLETED') setImaStatus('All ads completed');
+      if (evtName === 'AD_BUFFERING') setImaStatus('Buffering...');
+      if (evtName === 'AD_CAN_PLAY') setImaStatus('Can play');
+    });
+  });
+
+  imaAdsManager.addEventListener(google.ima.AdErrorEvent.Type.AD_ERROR, onImaAdError);
+
+  try {
+    const wrap = document.getElementById('ima-player-wrap');
+    imaAdsManager.init(wrap.offsetWidth, wrap.offsetHeight || 360, google.ima.ViewMode.NORMAL);
+    imaAdsManager.start();
+    logImaEvent('START', 'Ads manager started');
+  } catch (e) {
+    logImaEvent('ERROR', e.message);
+    setImaStatus('Error: ' + e.message);
+  }
+}
+
+function onImaAdError(adErrorEvent) {
+  const error = adErrorEvent.getError();
+  const msg = error.getMessage ? error.getMessage() : String(error);
+  const code = error.getErrorCode ? error.getErrorCode() : '';
+  logImaEvent('AD_ERROR', `[${code}] ${msg}`);
+  setImaStatus('Error: ' + msg);
+  if (imaAdsManager) { try { imaAdsManager.destroy(); } catch(e) {} imaAdsManager = null; }
+}
+
+function imaReset() {
+  if (imaAdsManager) { try { imaAdsManager.destroy(); } catch(e) {} imaAdsManager = null; }
+  const contentPlayer = document.getElementById('ima-content-player');
+  if (contentPlayer) { contentPlayer.load(); }
+  const eventsDiv = document.getElementById('ima-events');
+  if (eventsDiv) eventsDiv.innerHTML = '';
+  setImaStatus('Ready — click Load & Play');
+  // Re-init
+  initIma();
 }
 
 function formatBytes(bytes) {
@@ -839,6 +1102,9 @@ function toggleSection(header) {
 }
 
 function clearResults() {
+  if (imaAdsManager) { try { imaAdsManager.destroy(); } catch(e) {} imaAdsManager = null; }
+  imaAdsLoader = null;
+  imaAdDisplayContainer = null;
   document.getElementById('results').classList.remove('visible');
   document.getElementById('summary-cards').innerHTML = '';
   document.getElementById('player-section').innerHTML = '';
