@@ -102,6 +102,24 @@
   .proxy-note { background: #1c1d21; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; margin-top: 12px; font-size: 12px; color: #8b949e; line-height: 1.5; }
   .proxy-note code { background: #21262d; padding: 2px 6px; border-radius: 3px; font-size: 12px; color: #e1e4e8; }
   .footer { text-align: center; padding: 32px 0 16px; color: #484f58; font-size: 12px; border-top: 1px solid #21262d; margin-top: 32px; }
+
+  /* Player */
+  .player-container { padding: 20px; }
+  .player-wrapper { display: flex; gap: 20px; flex-wrap: wrap; }
+  .player-video-area { flex: 1; min-width: 320px; }
+  .player-video-area video { width: 100%; max-height: 400px; background: #000; border-radius: 6px; }
+  .player-sidebar { width: 280px; flex-shrink: 0; }
+  .player-select-label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .player-select { width: 100%; padding: 8px 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e1e4e8; font-size: 13px; outline: none; margin-bottom: 12px; }
+  .player-select:focus { border-color: #1f6feb; }
+  .player-meta { font-size: 12px; color: #8b949e; line-height: 1.8; }
+  .player-meta dt { color: #e1e4e8; font-weight: 500; display: inline; }
+  .player-meta dd { display: inline; margin: 0; }
+  .player-meta dd::after { content: ''; display: block; }
+  .player-events { margin-top: 12px; max-height: 200px; overflow-y: auto; }
+  .player-event { font-size: 11px; font-family: 'SF Mono', Monaco, monospace; padding: 3px 0; color: #8b949e; border-bottom: 1px solid #21262d; display: flex; gap: 8px; }
+  .player-event-time { color: #1f6feb; min-width: 60px; }
+  .player-event-name { color: #e1e4e8; }
 </style>
 </head>
 <body>
@@ -145,6 +163,7 @@
 
   <div id="results" class="results">
     <div id="summary-cards" class="summary-cards"></div>
+    <div id="player-section"></div>
     <div id="waterfall-section"></div>
     <div id="wrapper-chain-section"></div>
     <div id="media-section"></div>
@@ -552,6 +571,9 @@ function renderResults(allAds, totalFetchTime, wrapperDepth) {
     </div>
   `;
 
+  // Media player
+  renderPlayer(allAds);
+
   // Waterfall chart
   renderWaterfall();
 
@@ -708,6 +730,102 @@ function renderVastOverview(allAds) {
   document.getElementById('vast-overview-section').innerHTML = html;
 }
 
+function renderPlayer(allAds) {
+  const allMedia = allAds.flatMap(a => a.mediaFiles).filter(mf => mf.url && mf.type && mf.type.startsWith('video/'));
+  if (allMedia.length === 0) {
+    document.getElementById('player-section').innerHTML = '';
+    return;
+  }
+
+  // Build options sorted by bitrate desc
+  const sorted = [...allMedia].sort((a, b) => (parseInt(b.bitrate) || 0) - (parseInt(a.bitrate) || 0));
+  const options = sorted.map((mf, i) => {
+    const label = `${mf.width}x${mf.height} · ${mf.bitrate ? mf.bitrate + ' kbps' : 'unknown bitrate'} · ${mf.type}`;
+    return `<option value="${i}" data-url="${escapeHtml(mf.url)}" data-type="${escapeHtml(mf.type)}" data-width="${mf.width}" data-height="${mf.height}" data-bitrate="${mf.bitrate}" data-delivery="${mf.delivery}">${escapeHtml(label)}</option>`;
+  }).join('');
+
+  const clickThrough = allAds.find(a => a.creativeInfo?.clickThrough)?.creativeInfo?.clickThrough || '';
+  const duration = allAds.find(a => a.creativeInfo?.duration)?.creativeInfo?.duration || '';
+  const adSystem = allAds.find(a => a.creativeInfo?.adSystem)?.creativeInfo?.adSystem || '';
+  const adTitle = allAds.find(a => a.creativeInfo?.adTitle)?.creativeInfo?.adTitle || '';
+
+  const html = `<div class="section">
+    <div class="section-header" onclick="toggleSection(this)">
+      <span class="section-title">Ad Preview <span class="section-badge">${allMedia.length} rendition(s)</span></span>
+    </div>
+    <div class="section-body">
+      <div class="player-container">
+        <div class="player-wrapper">
+          <div class="player-video-area">
+            <video id="vast-player" controls preload="auto" crossorigin="anonymous">
+              <source src="${escapeHtml(sorted[0].url)}" type="${escapeHtml(sorted[0].type)}">
+            </video>
+          </div>
+          <div class="player-sidebar">
+            <div class="player-select-label">Rendition</div>
+            <select class="player-select" id="player-rendition" onchange="switchRendition()">${options}</select>
+            <div class="player-meta">
+              ${adSystem ? `<dt>Ad System:</dt> <dd>${escapeHtml(adSystem)}</dd>` : ''}
+              ${adTitle ? `<dt>Ad Title:</dt> <dd>${escapeHtml(adTitle)}</dd>` : ''}
+              ${duration ? `<dt>Duration:</dt> <dd>${escapeHtml(duration)}</dd>` : ''}
+              ${clickThrough ? `<dt>Click URL:</dt> <dd style="font-size:11px;word-break:break-all;color:#79c0ff">${escapeHtml(truncateUrl(clickThrough, 60))}</dd>` : ''}
+            </div>
+            <div class="player-select-label" style="margin-top:14px">Playback Events</div>
+            <div class="player-events" id="player-events"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('player-section').innerHTML = html;
+
+  // Attach event listeners to the video element
+  const video = document.getElementById('vast-player');
+  const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause', 'seeking', 'seeked', 'waiting', 'stalled', 'error', 'ended', 'timeupdate'];
+  const playerStartTime = performance.now();
+  let lastTimeUpdate = 0;
+
+  events.forEach(evt => {
+    video.addEventListener(evt, () => {
+      // Throttle timeupdate to once per second
+      if (evt === 'timeupdate') {
+        const now = performance.now();
+        if (now - lastTimeUpdate < 1000) return;
+        lastTimeUpdate = now;
+      }
+      const elapsed = performance.now() - playerStartTime;
+      const eventsDiv = document.getElementById('player-events');
+      if (!eventsDiv) return;
+      const entry = document.createElement('div');
+      entry.className = 'player-event';
+      entry.innerHTML = `<span class="player-event-time">${formatMs(elapsed)}</span><span class="player-event-name">${evt}</span>${evt === 'timeupdate' ? '<span style="color:#484f58">t=' + video.currentTime.toFixed(1) + 's</span>' : ''}${evt === 'error' ? '<span class="status-fail">' + (video.error?.message || 'unknown') + '</span>' : ''}`;
+      eventsDiv.appendChild(entry);
+      eventsDiv.scrollTop = eventsDiv.scrollHeight;
+    });
+  });
+}
+
+// Store sorted media for rendition switching
+function switchRendition() {
+  const select = document.getElementById('player-rendition');
+  const option = select.options[select.selectedIndex];
+  const video = document.getElementById('vast-player');
+  if (!video || !option) return;
+  const url = option.getAttribute('data-url');
+  const type = option.getAttribute('data-type');
+  const currentTime = video.currentTime;
+  const wasPlaying = !video.paused;
+  video.querySelector('source').src = url;
+  video.querySelector('source').type = type;
+  video.load();
+  video.currentTime = currentTime;
+  if (wasPlaying) video.play();
+  // Clear events log on switch
+  const eventsDiv = document.getElementById('player-events');
+  if (eventsDiv) eventsDiv.innerHTML = '';
+}
+
 function formatBytes(bytes) {
   if (!bytes) return '—';
   if (bytes < 1024) return bytes + ' B';
@@ -723,6 +841,7 @@ function toggleSection(header) {
 function clearResults() {
   document.getElementById('results').classList.remove('visible');
   document.getElementById('summary-cards').innerHTML = '';
+  document.getElementById('player-section').innerHTML = '';
   document.getElementById('waterfall-section').innerHTML = '';
   document.getElementById('wrapper-chain-section').innerHTML = '';
   document.getElementById('media-section').innerHTML = '';
