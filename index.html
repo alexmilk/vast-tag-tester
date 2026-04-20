@@ -58,7 +58,10 @@
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: #1c2128; }
 
-  .url-cell { max-width: 400px; word-break: break-all; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #79c0ff; }
+  .url-cell { max-width: 400px; word-break: break-all; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #79c0ff; position: relative; }
+  .copy-btn { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-left: 6px; vertical-align: middle; transition: all 0.15s; white-space: nowrap; }
+  .copy-btn:hover { background: #30363d; color: #e1e4e8; }
+  .copy-btn.copied { background: #1a7f37; border-color: #1a7f37; color: #fff; }
   .timing-bar-container { width: 100%; min-width: 120px; }
   .timing-bar { height: 20px; border-radius: 3px; position: relative; display: flex; align-items: center; }
   .timing-bar-fill { height: 100%; border-radius: 3px; min-width: 2px; }
@@ -685,7 +688,7 @@ function renderMediaTable() {
 
   testResults.mediaResults.forEach(m => {
     html += `<tr>
-      <td class="url-cell" title="${escapeHtml(m.url)}">${escapeHtml(truncateUrl(m.url, 60))}</td>
+      <td class="url-cell" title="${escapeHtml(m.url)}">${escapeHtml(truncateUrl(m.url, 60))} <button class="copy-btn" onclick="copyToClipboard(this, '${escapeHtml(m.url.replace(/'/g, "\\'"))}')">Copy</button></td>
       <td>${escapeHtml(m.type || m.contentType || '—')}</td>
       <td>${m.width && m.height ? m.width + '×' + m.height : '—'}</td>
       <td>${m.bitrate ? m.bitrate + ' kbps' : '—'}</td>
@@ -1087,6 +1090,15 @@ function imaReset() {
   setImaStatus('Ready — click Load & Play');
   // Re-init
   initIma();
+}
+
+function copyToClipboard(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.textContent;
+    btn.textContent = 'Copied to Clipboard!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1500);
+  });
 }
 
 function formatBytes(bytes) {
