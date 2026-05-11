@@ -9,7 +9,30 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
   .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-  h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; color: #fff; display: flex; align-items: center; gap: 10px; }
+  h1 img { height: 28px; width: auto; }
+  .beta-badge { font-size: 11px; font-weight: 600; background: #d29922; color: #0d1117; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; margin-left: auto; }
+
+  /* Changes Log */
+  .changelog-btn-wrap { text-align: center; padding: 12px 0 24px; }
+  .changelog-btn { background: transparent; border: 1px solid #30363d; color: #8b949e; padding: 6px 16px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .changelog-btn:hover { background: #21262d; color: #e1e4e8; }
+  .changelog-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+  .changelog-overlay.open { display: flex; }
+  .changelog-dialog { background: #161b22; border: 1px solid #30363d; border-radius: 10px; width: 90%; max-width: 640px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.4); }
+  .changelog-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+  .changelog-header h2 { font-size: 16px; font-weight: 600; color: #fff; margin: 0; }
+  .changelog-close { background: none; border: none; color: #8b949e; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .changelog-close:hover { color: #e1e4e8; }
+  .changelog-body { padding: 20px; overflow-y: auto; flex: 1; }
+  .changelog-body h3 { font-size: 14px; color: #1f6feb; margin: 16px 0 8px 0; }
+  .changelog-body h3:first-child { margin-top: 0; }
+  .changelog-body ul { margin: 0 0 8px 0; padding-left: 20px; }
+  .changelog-body li { font-size: 13px; color: #c9d1d9; line-height: 1.7; }
+  .changelog-body .cl-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; margin-right: 4px; }
+  .cl-new { background: #1a7f3722; color: #3fb950; border: 1px solid #3fb95044; }
+  .cl-improved { background: #1f6feb22; color: #79c0ff; border: 1px solid #79c0ff44; }
+  .cl-changed { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
   .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
   .input-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
   .tabs { display: flex; gap: 0; margin-bottom: 16px; }
@@ -163,7 +186,7 @@
 </head>
 <body>
 <div class="container">
-  <h1>Flunkr - VAST/VPAID Diagnostics Tool</h1>
+  <h1><img src="data/images/gear.png" alt="Flunkr icon">Flunkr - VAST/VPAID Diagnostics Tool<span class="beta-badge">BETA</span></h1>
   <p class="subtitle">Analyze load performance of VAST video ad tags &mdash; measures fetch times, media downloads, tracking pixels, and wrapper chains.</p>
 
   <div class="input-section">
@@ -214,6 +237,52 @@
 
   <div class="footer">
     &copy; 2026 Taboola. All rights reserved. Flunkr - VAST/VPAID Diagnostics Tool &mdash; Internal Tool by Alex Milkis.
+  </div>
+
+  <div class="changelog-btn-wrap">
+    <button class="changelog-btn" onclick="document.getElementById('changelog-overlay').classList.add('open')">Changes Log</button>
+  </div>
+</div>
+
+<!-- Changes Log Dialog -->
+<div id="changelog-overlay" class="changelog-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="changelog-dialog">
+    <div class="changelog-header">
+      <h2>Changes Log</h2>
+      <button class="changelog-close" onclick="document.getElementById('changelog-overlay').classList.remove('open')">&times;</button>
+    </div>
+    <div class="changelog-body">
+      <h3>May 11, 2026</h3>
+      <ul>
+        <li><span class="cl-tag cl-new">NEW</span> Added gear icon to header title</li>
+        <li><span class="cl-tag cl-new">NEW</span> Added BETA badge to header</li>
+        <li><span class="cl-tag cl-new">NEW</span> Added Changes Log dialog</li>
+      </ul>
+
+      <h3>April 20, 2026</h3>
+      <ul>
+        <li><span class="cl-tag cl-new">NEW</span> Initial release of Flunkr - VAST/VPAID Diagnostics Tool</li>
+        <li><span class="cl-tag cl-new">NEW</span> VAST tag URL input with fetch timing and TTFB measurement</li>
+        <li><span class="cl-tag cl-new">NEW</span> Paste XML input mode to bypass CORS restrictions</li>
+        <li><span class="cl-tag cl-new">NEW</span> Wrapper chain resolution — follows up to 10 redirect levels with per-hop timing</li>
+        <li><span class="cl-tag cl-new">NEW</span> Media file probing — downloads first 256KB, reports TTFB, size, bitrate, resolution</li>
+        <li><span class="cl-tag cl-new">NEW</span> Tracking pixel testing — fires all tracking URLs and measures response times</li>
+        <li><span class="cl-tag cl-new">NEW</span> Companion ad testing (optional)</li>
+        <li><span class="cl-tag cl-new">NEW</span> Summary cards — VAST fetch, wrapper depth, media files, avg TTFB, slowest resource, duration</li>
+        <li><span class="cl-tag cl-new">NEW</span> Waterfall chart — visual timeline of all resource loads</li>
+        <li><span class="cl-tag cl-new">NEW</span> VAST structure overview — parsed tree of all ads with metadata</li>
+        <li><span class="cl-tag cl-new">NEW</span> Copyright footer</li>
+        <li><span class="cl-tag cl-new">NEW</span> Direct HTML5 video player with rendition selector and playback event log</li>
+        <li><span class="cl-tag cl-new">NEW</span> IMA SDK player — realistic ad playback with full IMA lifecycle event logging</li>
+        <li><span class="cl-tag cl-changed">CHANGED</span> IMA SDK player set as the default player mode</li>
+        <li><span class="cl-tag cl-new">NEW</span> Copy-to-clipboard button on media file URLs</li>
+        <li><span class="cl-tag cl-improved">IMPROVED</span> Enlarged IMA SDK player container (800px, 16:9 aspect ratio)</li>
+        <li><span class="cl-tag cl-new">NEW</span> Tracking Domain Map — radial SVG diagram showing all third-party domain connections with domain summary table</li>
+        <li><span class="cl-tag cl-new">NEW</span> VPAID/SIMID detection summary card</li>
+        <li><span class="cl-tag cl-new">NEW</span> README.md documentation</li>
+        <li><span class="cl-tag cl-changed">CHANGED</span> Renamed tool to Flunkr - VAST/VPAID Diagnostics Tool</li>
+      </ul>
+    </div>
   </div>
 </div>
 
