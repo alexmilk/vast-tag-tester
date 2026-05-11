@@ -7,11 +7,16 @@
 <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; padding-top: 56px; }
+  .navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: #161b22; border-bottom: 1px solid #30363d; height: 56px; display: flex; align-items: center; padding: 0 24px; }
+  .navbar-inner { max-width: 1200px; width: 100%; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
+  .navbar-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; color: #fff; text-decoration: none; }
+  .navbar-brand img { height: 26px; width: auto; }
+  .beta-badge { font-size: 10px; font-weight: 600; background: #d29922; color: #0d1117; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.5px; }
+  .navbar-subtitle { font-size: 12px; color: #484f58; margin-left: 8px; }
+  .navbar-spacer { flex: 1; }
+  .navbar-actions { display: flex; align-items: center; gap: 8px; }
   .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-  h1 { font-size: 24px; font-weight: 600; margin-bottom: 4px; color: #fff; display: flex; align-items: center; gap: 10px; }
-  h1 img { height: 28px; width: auto; }
-  .beta-badge { font-size: 11px; font-weight: 600; background: #d29922; color: #0d1117; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; margin-left: auto; }
 
   /* Changes Log */
   .changelog-btn-wrap { text-align: center; padding: 12px 0 24px; }
@@ -33,7 +38,6 @@
   .cl-new { background: #1a7f3722; color: #3fb950; border: 1px solid #3fb95044; }
   .cl-improved { background: #1f6feb22; color: #79c0ff; border: 1px solid #79c0ff44; }
   .cl-changed { background: #d2992222; color: #d29922; border: 1px solid #d2992244; }
-  .subtitle { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
   .input-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
   .tabs { display: flex; gap: 0; margin-bottom: 16px; }
   .tab { padding: 8px 16px; background: transparent; border: 1px solid #30363d; color: #8b949e; cursor: pointer; font-size: 13px; transition: all 0.15s; }
@@ -185,17 +189,32 @@
 </style>
 </head>
 <body>
-<div class="container">
-  <h1><img src="data/images/gear.png" alt="Flunkr icon">Flunkr - VAST/VPAID Diagnostics Tool<span class="beta-badge">BETA</span></h1>
-  <p class="subtitle">Analyze load performance of VAST video ad tags &mdash; measures fetch times, media downloads, tracking pixels, and wrapper chains.</p>
+<nav class="navbar">
+  <div class="navbar-inner">
+    <div class="navbar-brand">
+      <img src="data/images/gear.png" alt="Flunkr icon">
+      Flunkr
+      <span class="beta-badge">BETA</span>
+      <span class="navbar-subtitle">VAST/VPAID Diagnostics Tool</span>
+    </div>
+    <div class="navbar-spacer"></div>
+    <div class="navbar-actions">
+      <!-- Future buttons go here -->
+    </div>
+  </div>
+</nav>
 
+<div class="container">
   <div class="input-section">
     <div class="tabs">
       <button class="tab active" data-target="url-input">Tag URL</button>
       <button class="tab" data-target="xml-input">Paste XML</button>
     </div>
     <div id="url-input" class="input-group active">
-      <input type="text" id="vast-url" placeholder="https://ad.doubleclick.net/ddm/pfadx/..." />
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="vast-url" placeholder="https://ad.doubleclick.net/ddm/pfadx/..." style="flex:1" />
+        <button class="btn btn-secondary" style="white-space:nowrap;padding:10px 12px;font-size:12px" onclick="document.getElementById('vast-url').value='https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_preroll_skippable&sz=640x480&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator='+Date.now()">Sample Tag</button>
+      </div>
     </div>
     <div id="xml-input" class="input-group">
       <textarea id="vast-xml" placeholder="Paste your VAST XML here..."></textarea>
