@@ -6,6 +6,8 @@
 <title>Flunkr - VAST/VPAID Diagnostics Tool</title>
 <link rel="icon" type="image/png" href="data/images/gear.png">
 <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; padding-top: 56px; }
@@ -181,6 +183,28 @@
   .domain-map { padding: 20px; }
   .domain-map-canvas { width: 100%; min-height: 300px; background: #0d1117; border-radius: 6px; overflow: hidden; position: relative; }
   .domain-map svg { width: 100%; height: 100%; }
+  .domain-view-toggle { display: inline-flex; gap: 0; margin-bottom: 12px; }
+  .domain-view-toggle button { padding: 6px 14px; background: transparent; border: 1px solid #30363d; color: #8b949e; cursor: pointer; font-size: 12px; transition: all 0.15s; }
+  .domain-view-toggle button:first-child { border-radius: 5px 0 0 5px; }
+  .domain-view-toggle button:last-child { border-radius: 0 5px 5px 0; }
+  .domain-view-toggle button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .domain-view-toggle button:hover:not(.active) { color: #e1e4e8; background: #21262d; }
+  .domain-view-panel { display: none; }
+  .domain-view-panel.active { display: block; }
+  .domain-geo-map { width: 100%; height: 460px; background: #0d1117; border-radius: 6px; overflow: hidden; }
+  .domain-geo-status { font-size: 12px; color: #8b949e; margin-top: 8px; line-height: 1.6; }
+  .leaflet-container { background: #0d1117; }
+  .leaflet-popup-content-wrapper { background: #161b22; color: #e1e4e8; border: 1px solid #30363d; border-radius: 6px; }
+  .leaflet-popup-tip { background: #161b22; }
+  .leaflet-popup-content { font-size: 12px; line-height: 1.6; margin: 10px 12px; }
+  .leaflet-popup-content strong { color: #e1e4e8; }
+  .leaflet-popup-content .geo-popup-domain { color: #58a6ff; font-weight: 600; word-break: break-all; }
+  .leaflet-popup-content .geo-popup-meta { color: #8b949e; font-size: 11px; margin-top: 4px; }
+  .leaflet-popup-close-button { color: #8b949e !important; }
+  .leaflet-control-attribution { background: rgba(13, 17, 23, 0.8) !important; color: #8b949e !important; }
+  .leaflet-control-attribution a { color: #58a6ff !important; }
+  .leaflet-control-zoom a { background: #161b22 !important; color: #e1e4e8 !important; border-color: #30363d !important; }
+  .leaflet-control-zoom a:hover { background: #21262d !important; }
   .domain-node { cursor: default; }
   .domain-node circle { transition: r 0.2s; }
   .domain-node:hover circle { filter: brightness(1.3); }
@@ -997,14 +1021,179 @@ function renderTrackingDomainMap(allAds) {
     </div>
     <div class="section-body">
       <div class="domain-map">
-        <div class="domain-map-canvas">${svg}</div>
-        ${legendHtml}
+        <div class="domain-view-toggle">
+          <button class="active" data-view="radial" onclick="switchDomainView(this)">Radial</button>
+          <button data-view="geo" onclick="switchDomainView(this)">Geo Map</button>
+        </div>
+        <div class="domain-view-panel active" data-panel="radial">
+          <div class="domain-map-canvas">${svg}</div>
+          ${legendHtml}
+        </div>
+        <div class="domain-view-panel" data-panel="geo">
+          <div class="domain-geo-map" id="domain-geo-map"></div>
+          <div class="domain-geo-status" id="domain-geo-status">Click "Geo Map" to resolve domains and plot their probable locations (uses public DNS-over-HTTPS + GeoIP). Note: most ad-tech traffic terminates at CDN edges (Cloudflare/Akamai/Fastly) — these markers reflect the resolved edge, not the vendor's actual datacenter.</div>
+        </div>
         ${tableHtml}
       </div>
     </div>
   </div>`;
 
   document.getElementById('tracking-map-section').innerHTML = html;
+
+  // Stash domain list + colors on the section so the geo renderer can pick it up on demand
+  const sectionEl = document.getElementById('tracking-map-section');
+  sectionEl._domainData = { domains, categoryColors };
+}
+
+// --- Domain view toggle (radial ↔ geo) ---
+function switchDomainView(btn) {
+  const wrap = btn.closest('.domain-map');
+  wrap.querySelectorAll('.domain-view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  wrap.querySelectorAll('.domain-view-panel').forEach(p => p.classList.remove('active'));
+  wrap.querySelector(`.domain-view-panel[data-panel="${btn.dataset.view}"]`).classList.add('active');
+  if (btn.dataset.view === 'geo') {
+    renderGeoMap();
+  }
+}
+
+// --- Geo map state ---
+let geoMapInstance = null;
+const geoIpCache = {};   // hostname -> { ip, lat, lon, city, country, asn } | { error }
+
+async function resolveHostIp(hostname) {
+  try {
+    const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=A`, {
+      headers: { 'Accept': 'application/dns-json' }
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const ans = (j.Answer || []).find(a => a.type === 1);
+    return ans ? ans.data : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function geoLookupIp(ip) {
+  try {
+    const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.success) return null;
+    return {
+      lat: j.latitude,
+      lon: j.longitude,
+      city: j.city,
+      country: j.country,
+      countryCode: j.country_code,
+      asn: j.connection && j.connection.org ? j.connection.org : (j.connection && j.connection.isp) || ''
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function renderGeoMap() {
+  const sectionEl = document.getElementById('tracking-map-section');
+  const data = sectionEl && sectionEl._domainData;
+  if (!data) return;
+  const { domains, categoryColors } = data;
+
+  const mapEl = document.getElementById('domain-geo-map');
+  const statusEl = document.getElementById('domain-geo-status');
+  if (!mapEl) return;
+
+  if (typeof L === 'undefined') {
+    statusEl.textContent = 'Leaflet failed to load — check network connectivity to unpkg.com.';
+    return;
+  }
+
+  // Initialize map once
+  if (!geoMapInstance || geoMapInstance._container !== mapEl) {
+    if (geoMapInstance) { try { geoMapInstance.remove(); } catch(e) {} }
+    geoMapInstance = L.map(mapEl, { worldCopyJump: true, minZoom: 2 }).setView([20, 0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(geoMapInstance);
+  } else {
+    geoMapInstance.eachLayer(layer => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
+        geoMapInstance.removeLayer(layer);
+      }
+    });
+  }
+
+  // Fix Leaflet sizing inside the (initially-hidden) panel
+  setTimeout(() => { if (geoMapInstance) geoMapInstance.invalidateSize(); }, 50);
+
+  statusEl.textContent = `Resolving ${domains.length} domain(s)…`;
+
+  // Resolve with limited concurrency
+  const concurrency = 5;
+  let done = 0;
+  const queue = [...domains];
+  const markers = [];
+
+  async function worker() {
+    while (queue.length) {
+      const d = queue.shift();
+      const host = d.domain;
+      let info = geoIpCache[host];
+      if (!info) {
+        const ip = await resolveHostIp(host);
+        if (!ip) {
+          info = { error: 'DNS lookup failed' };
+        } else {
+          const geo = await geoLookupIp(ip);
+          info = geo ? { ip, ...geo } : { ip, error: 'GeoIP lookup failed' };
+        }
+        geoIpCache[host] = info;
+      }
+      done++;
+      statusEl.textContent = `Resolving ${done}/${domains.length}… ${info.error ? '(' + info.error + ': ' + host + ')' : ''}`;
+
+      if (!info.error && typeof info.lat === 'number' && typeof info.lon === 'number') {
+        const primaryType = Object.entries(d.types).sort((a, b) => b[1] - a[1])[0][0];
+        const color = categoryColors[primaryType] || categoryColors['Other'];
+        const radius = Math.max(6, Math.min(18, 5 + d.count * 1.5));
+        const marker = L.circleMarker([info.lat, info.lon], {
+          radius,
+          color,
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 0.45
+        }).addTo(geoMapInstance);
+        const typeTags = Object.entries(d.types).sort((a, b) => b[1] - a[1])
+          .map(([t, c]) => `${t} (${c})`).join(', ');
+        marker.bindPopup(
+          `<div class="geo-popup-domain">${escapeHtml(host)}</div>` +
+          `<div>${escapeHtml(info.city || '—')}, ${escapeHtml(info.country || '—')} (${escapeHtml(info.countryCode || '')})</div>` +
+          `<div class="geo-popup-meta">IP: ${escapeHtml(info.ip)}</div>` +
+          (info.asn ? `<div class="geo-popup-meta">${escapeHtml(info.asn)}</div>` : '') +
+          `<div class="geo-popup-meta">${d.count} call(s) — ${escapeHtml(typeTags)}</div>`
+        );
+        markers.push(marker);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, domains.length) }, worker));
+
+  if (markers.length) {
+    const group = L.featureGroup(markers);
+    try {
+      geoMapInstance.fitBounds(group.getBounds().pad(0.2), { maxZoom: 5 });
+    } catch (e) {}
+    const failed = Object.values(geoIpCache).filter(v => v.error).length;
+    statusEl.textContent = `Plotted ${markers.length} of ${domains.length} domain(s)` +
+      (failed ? ` · ${failed} failed to resolve` : '') +
+      ' · Locations reflect resolved CDN edges, not vendor datacenters.';
+  } else {
+    statusEl.textContent = 'No domains could be resolved. Public DNS-over-HTTPS or GeoIP APIs may be blocked on this network.';
+  }
 }
 
 function categorizeEvent(type) {
