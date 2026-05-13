@@ -103,6 +103,9 @@
   .status-slow { color: #d29922; }
   .status-fail { color: #f85149; }
   .status-skip { color: #8b949e; }
+  .summary-card .value.blink-red { color: #f85149; animation: value-blink 1s ease-in-out infinite; }
+  @keyframes value-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @media (prefers-reduced-motion: reduce) { .summary-card .value.blink-red { animation: none; } }
 
   .perf-good { background: #1a7f37; }
   .perf-ok { background: #9e6a03; }
@@ -718,7 +721,7 @@ function renderResults(allAds, totalFetchTime, wrapperDepth) {
   document.getElementById('summary-cards').innerHTML = `
     <div class="summary-card">
       <div class="label">VAST Fetch</div>
-      <div class="value ${statusClass(totalFetchTime)}">${formatMs(totalFetchTime)}</div>
+      <div class="value ${statusClass(totalFetchTime)}${totalFetchTime > 1000 ? ' blink-red' : ''}">${formatMs(totalFetchTime)}</div>
     </div>
     <div class="summary-card">
       <div class="label">Wrapper Depth</div>
