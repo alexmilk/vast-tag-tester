@@ -1,5 +1,14 @@
 # Flunkr - Changes Log
 
+## May 13, 2026
+- **NEW** VAST Fetch summary card blinks red when the fetch time exceeds 1 second
+- **IMPROVED** Same blink-red treatment now applied to Avg Media TTFB and Slowest Resource cards (threshold: 1 second)
+
+## May 12, 2026
+- **NEW** Gear icon in the header now spins while the VAST unit is being fetched (initial fetch + wrapper chain) and stops once resolution completes
+- **CHANGED** Gear spin tuned to 1.2s per rotation for a clear "loading" feel; idle by default, no longer spins continuously
+- **NEW** Respects `prefers-reduced-motion` — animation is suppressed for users who opt out of motion at the OS level
+
 ## May 11, 2026
 - **NEW** Added gear icon to header title
 - **NEW** Added BETA badge to header
